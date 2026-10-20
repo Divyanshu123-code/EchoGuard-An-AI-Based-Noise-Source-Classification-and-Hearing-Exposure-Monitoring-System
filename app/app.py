@@ -97,12 +97,18 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # Data Loading & Session State Initialization
 # -----------------------------------------------------------------------------
-@st.cache_data
-def load_base_sessions() -> pd.DataFrame:
+def load_live_sessions() -> pd.DataFrame:
     path = os.path.join(REPO_ROOT, "data", "sample_sessions.csv")
-    if os.path.exists(path):
+    if os.path.exists(path) and os.path.getsize(path) > 0:
+        return pd.read_csv(path)
+    return pd.DataFrame(columns=["session_id", "start_time", "end_time", "profile_id", "volume_step", "max_step", "label"])
+
+def load_demo_sessions() -> pd.DataFrame:
+    path = os.path.join(REPO_ROOT, "data", "demo_sessions.csv")
+    if os.path.exists(path) and os.path.getsize(path) > 0:
         return pd.read_csv(path)
     return pd.DataFrame(columns=["session_id", "start_time", "end_time", "profile_id", "volume_step", "max_step", "label"])
 
@@ -113,9 +119,6 @@ def load_calibration_dataset() -> pd.DataFrame:
         return pd.read_csv(path)
     return pd.DataFrame()
 
-if "sessions_df" not in st.session_state:
-    st.session_state.sessions_df = load_base_sessions()
-
 # -----------------------------------------------------------------------------
 # Sidebar: Settings & Profiles
 # -----------------------------------------------------------------------------
@@ -123,6 +126,25 @@ with st.sidebar:
     st.image("https://raw.githubusercontent.com/feathericons/feather/master/icons/shield.svg", width=42)
     st.markdown("### **EchoGuard Controls**")
     
+    # Dataset Mode Selector
+    data_mode = st.radio(
+        "📊 Data Source Mode",
+        options=["🔴 Live Recorded Data Only", "📁 Demo Synthetic Walkthrough"],
+        index=0,
+        help="Switch between genuine live recordings from your laptop and synthetic demo sessions."
+    )
+    is_live_mode = "Live" in data_mode
+
+    if is_live_mode:
+        st.session_state.sessions_df = load_live_sessions()
+        st.caption(f"Showing {len(st.session_state.sessions_df)} real sessions from `monitor_laptop.py`")
+    else:
+        st.session_state.sessions_df = load_demo_sessions()
+        st.caption(f"Showing {len(st.session_state.sessions_df)} simulated demo sessions")
+
+    if st.button("🔄 Sync & Refresh Data Now"):
+        st.rerun()
+
     profiles = get_available_profiles()
     profile_options = {p["name"]: p["profile_id"] for p in profiles}
     
@@ -145,7 +167,7 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("#### **Product Principles**")
     st.markdown(
-        """
+        r"""
         - **Scientifically Honest:** Uncertainty is explicit ($\pm 5.0\text{ dB}$).
         - **Label Transparency:** Measured vs. Estimated vs. Simulated.
         - **Non-Diagnostic:** Provides exposure awareness, not medical advice.
@@ -153,9 +175,13 @@ with st.sidebar:
         """
     )
     st.markdown("---")
-    if st.button("🔄 Reset to Default Sample Data"):
-        st.session_state.sessions_df = load_base_sessions()
-        st.rerun()
+    if is_live_mode:
+        if st.button("🗑️ Clear Real Session History"):
+            with open(os.path.join(REPO_ROOT, "data", "sample_sessions.csv"), "w") as f:
+                f.write("session_id,start_time,end_time,profile_id,volume_step,max_step,label\n")
+            st.session_state.sessions_df = load_live_sessions()
+            st.success("Cleared real session log.")
+            st.rerun()
 
 # -----------------------------------------------------------------------------
 # Main Header
