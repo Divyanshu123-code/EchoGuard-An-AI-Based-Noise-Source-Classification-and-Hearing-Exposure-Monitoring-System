@@ -1,0 +1,72 @@
+{
+  "test_accuracy": 1.0,
+  "cv_comparison": {
+    "Random Forest": {
+      "mean": 100.0,
+      "std": 0.0
+    },
+    "Gradient Boosting": {
+      "mean": 100.0,
+      "std": 0.0
+    },
+    "Support Vector Machine": {
+      "mean": 100.0,
+      "std": 0.0
+    },
+    "K-Nearest Neighbors": {
+      "mean": 100.0,
+      "std": 0.0
+    }
+  },
+  "classification_report": {
+    "ambient_quiet": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 15.0
+    },
+    "speech_podcast": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 15.0
+    },
+    "music": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 15.0
+    },
+    "traffic_transport": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 15.0
+    },
+    "machinery_industrial": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 15.0
+    },
+    "siren_alarm": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 15.0
+    },
+    "accuracy": 1.0,
+    "macro avg": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 90.0
+    },
+    "weighted avg": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 90.0
+    }
+  }
+}

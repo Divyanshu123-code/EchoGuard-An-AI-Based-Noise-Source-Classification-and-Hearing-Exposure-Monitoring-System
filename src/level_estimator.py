@@ -12,7 +12,8 @@ def estimate_level(
     volume_step: int | None,
     max_step: int,
     profile_id: str,
-    content: str = "typical"
+    content: str = "typical",
+    method: str = "lookup"
 ) -> dict:
     """
     Estimates ear-level sound in dBA from volume step and headphone profile.
@@ -22,6 +23,7 @@ def estimate_level(
         max_step: Maximum volume step on device (e.g. 15 or 100)
         profile_id: Identifier for headphone profile
         content: Audio content loudness bucket ('typical', 'loud', 'quiet', etc.)
+        method: 'lookup' (calibrated lookup table) or 'ml' (trained gradient boosting regressor)
         
     Returns:
         dict:
@@ -34,7 +36,7 @@ def estimate_level(
         return {
             "level_dba": None,
             "margin_db": 5.0,
-            "method": "lookup",
+            "method": method,
             "label": "unavailable"
         }
     
@@ -45,9 +47,25 @@ def estimate_level(
         return {
             "level_dba": simulated_dba,
             "margin_db": 5.0,
-            "method": "lookup",
+            "method": method,
             "label": "simulated"
         }
+
+    # If ML method requested, predict via trained AcousticLevelRegressor
+    if method == "ml":
+        try:
+            from src.noise_classifier import get_default_level_regressor
+            reg = get_default_level_regressor()
+            dba, margin_db = reg.predict_level(volume_step, max_step, profile_id, content=content)
+            return {
+                "level_dba": dba,
+                "margin_db": margin_db,
+                "method": "ml",
+                "label": "estimated"
+            }
+        except Exception:
+            # Fall back to lookup gracefully
+            pass
 
     # Query calibrated profile lookup
     dba, margin_db, label = lookup_profile_dba(profile_id, volume_step, max_step)
@@ -68,3 +86,4 @@ def estimate_level(
         "method": "lookup",
         "label": label
     }
+

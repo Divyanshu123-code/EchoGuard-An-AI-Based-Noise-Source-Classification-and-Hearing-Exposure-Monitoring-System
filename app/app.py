@@ -25,6 +25,15 @@ from src.headphone_profiles import get_available_profiles, load_headphone_profil
 from src.level_estimator import estimate_level
 from src.session_tracker import enrich_sessions, aggregate_daily_exposure
 from src.alerts import evaluate_exposure_alerts
+from src.noise_classifier import (
+    CLASSES,
+    CLASS_DESCRIPTIONS,
+    extract_features_from_audio,
+    generate_synthetic_sound,
+    get_default_noise_classifier,
+    get_default_level_regressor
+)
+
 
 # -----------------------------------------------------------------------------
 # Streamlit Page Configuration & Styling
@@ -164,6 +173,16 @@ with st.sidebar:
     )
     std_key = "niosh" if "NIOSH" in exposure_standard else "who"
 
+    # Select estimation engine
+    engine_choice = st.radio(
+        "🤖 Estimation Engine",
+        options=["Empirical Coupler Lookup", "Acoustic AI Regressor (ML)"],
+        index=0,
+        help="Coupler Lookup uses lab calibration curves. Acoustic AI uses a trained Gradient Boosting Regression model."
+    )
+    engine_key = "ml" if "AI" in engine_choice else "lookup"
+
+
     st.markdown("---")
     st.markdown("#### **Product Principles**")
     st.markdown(
@@ -196,13 +215,15 @@ st.markdown(
 enriched_df = enrich_sessions(st.session_state.sessions_df)
 
 # Tabs
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📊 Today's Exposure & Status",
     "🎚️ Live Volume & Ear Simulator",
     "📈 Weekly Trends & Habit Insights",
+    "🧠 AI Noise Classifier & Acoustic ML",
     "🔬 Lab Calibration & Profiles",
     "📝 Session Logger & Privacy"
 ])
+
 
 # -----------------------------------------------------------------------------
 # TAB 1: Today's Exposure & Live Status
@@ -326,16 +347,19 @@ with tab2:
         step_val = st.slider("📱 Phone Media Volume Step", min_value=1, max_value=15, value=10, step=1)
         content_type = st.selectbox("🎵 Audio Content Type", ["typical", "loud", "quiet", "podcast"], index=0)
         
-        sim_est = estimate_level(step_val, 15, selected_profile_id, content=content_type)
+        sim_est = estimate_level(step_val, 15, selected_profile_id, content=content_type, method=engine_key)
         est_dba = sim_est["level_dba"]
         est_margin = sim_est["margin_db"]
         est_label = sim_est["label"]
+        est_method = sim_est.get("method", "lookup")
 
         allowed_hrs = allowed_time_hours(est_dba, profile=std_key)
         dose_rate_per_hr = 100.0 / allowed_hrs if allowed_hrs > 0 else 100.0
 
         st.markdown("---")
         st.markdown(f"#### **Estimated Ear Sound Level:** `{est_dba:.1f} dBA`")
+        engine_label = "Gradient Boosting Regressor (ML)" if est_method == "ml" else "Calibrated Empirical Coupler"
+        st.markdown(f"- **Engine Active:** `{engine_label}`")
         st.markdown(f"- **Uncertainty Margin:** `±{est_margin:.1f} dB` (Range: `{est_dba - est_margin:.1f}` to `{est_dba + est_margin:.1f}` dBA)")
         st.markdown(f"- **Data Source Label:** `{est_label.upper()}`")
         st.markdown(f"- **Accumulation Rate:** `{dose_rate_per_hr:.1f}% dose per hour`")
@@ -346,6 +370,7 @@ with tab2:
             st.info(f"ℹ️ **Recommended Daily Limit:** {allowed_hrs:.1f} hours ({int(allowed_hrs * 60)} minutes).")
         else:
             st.warning(f"⚠️ **High Exposure Alert:** Daily limit is reached in only {allowed_hrs * 60:.0f} minutes!")
+
 
     with sim_col2:
         st.markdown("#### **Synthetic Waveform & Sound Spectrum**")
@@ -448,9 +473,171 @@ with tab3:
         st.info("No session history available yet.")
 
 # -----------------------------------------------------------------------------
-# TAB 4: Lab Calibration & Profiles Explorer
+# TAB 4: AI Noise Classifier & Acoustic ML Engine
 # -----------------------------------------------------------------------------
 with tab4:
+    st.markdown("### **AI-Based Noise Source Classification & Acoustic ML Engine**")
+    st.markdown("Classifies audio signals in real time using 49 extracted psychoacoustic and spectral features (MFCCs, spectral centroid, rolloff, bandwidth, zero-crossing rate, chroma, and crest factor) paired with a trained ensemble model.")
+
+    clf = get_default_noise_classifier()
+
+    # Classification Sub-tabs or Sections
+    st.markdown("#### **1. Interactive Acoustic Inference Lab**")
+    ai_col1, ai_col2 = st.columns([1, 1])
+
+    with ai_col1:
+        input_src = st.radio(
+            "Source Audio Signal",
+            options=["Built-in Environmental & Audio Classes", "Generate Real-time Acoustic Waveform", "Upload Audio File (.wav)"],
+            index=0
+        )
+
+        audio_to_eval = None
+        sr_eval = 22050
+        sample_name = ""
+
+        if input_src == "Built-in Environmental & Audio Classes":
+            class_pick = st.selectbox(
+                "Select Audio Category to Test",
+                options=CLASSES,
+                index=2,
+                format_func=lambda x: f"{x} - {CLASS_DESCRIPTIONS[x].split('.')[0]}"
+            )
+            sample_name = class_pick
+            audio_to_eval = generate_synthetic_sound(class_pick, duration=3.5, sr=sr_eval, seed=42)
+
+        elif input_src == "Generate Real-time Acoustic Waveform":
+            class_pick = st.selectbox("Acoustic Class", options=CLASSES)
+            dur_pick = st.slider("Duration (seconds)", 1.0, 6.0, 3.0, 0.5)
+            seed_pick = st.number_input("Random Seed", 0, 9999, 42)
+            sample_name = f"{class_pick}_s{seed_pick}"
+            audio_to_eval = generate_synthetic_sound(class_pick, duration=dur_pick, sr=sr_eval, seed=seed_pick)
+
+        else:
+            uploaded_file = st.file_uploader("Upload WAV audio file", type=["wav", "mp3"])
+            if uploaded_file is not None:
+                import soundfile as sf
+                try:
+                    data, sr_in = sf.read(uploaded_file)
+                    if data.ndim > 1:
+                        data = np.mean(data, axis=1)
+                    audio_to_eval = data.astype(np.float32)
+                    sr_eval = sr_in
+                    sample_name = uploaded_file.name
+                except Exception as e:
+                    st.error(f"Error reading audio file: {e}")
+
+        if audio_to_eval is not None:
+            st.audio(audio_to_eval, sample_rate=sr_eval)
+            classify_btn = st.button("🚀 Run AI Noise Classification")
+
+    with ai_col2:
+        if audio_to_eval is not None and ('classify_btn' in locals() and classify_btn or True):
+            feats = extract_features_from_audio(audio_to_eval, sr=sr_eval)
+            pred_class, prob_dict = clf.predict_from_features(feats)
+            top_prob = prob_dict[pred_class] * 100
+
+            st.markdown(f"""
+            <div style="background-color: #F8FAFC; border: 2px solid #3B82F6; border-radius: 10px; padding: 14px 18px; margin-bottom: 12px;">
+                <div style="font-size: 0.85rem; color: #64748B; font-weight: 600;">AI PREDICTED NOISE SOURCE</div>
+                <div style="font-size: 1.8rem; font-weight: 800; color: #1E3A8A;">{pred_class.upper()}</div>
+                <div style="font-size: 0.95rem; color: #059669; font-weight: 700;">Model Confidence: {top_prob:.1f}%</div>
+                <div style="font-size: 0.85rem; color: #334155; margin-top: 4px;">{CLASS_DESCRIPTIONS.get(pred_class, '')}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # Probabilities bar chart
+            prob_df = pd.DataFrame([
+                {"Class": k.replace("_", " ").title(), "Probability (%)": v * 100}
+                for k, v in sorted(prob_dict.items(), key=lambda x: x[1], reverse=True)
+            ])
+            fig_probs = px.bar(
+                prob_df,
+                x="Probability (%)",
+                y="Class",
+                orientation="h",
+                text="Probability (%)",
+                title="Classification Probability Distribution",
+                color="Probability (%)",
+                color_continuous_scale=["#93C5FD", "#2563EB"]
+            )
+            fig_probs.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
+            fig_probs.update_layout(yaxis=dict(autorange="reversed"), height=260, margin=dict(l=10, r=20, t=35, b=10))
+            st.plotly_chart(fig_probs, use_container_width=True)
+
+    # Waveform & Feature Visualizations
+    st.markdown("---")
+    st.markdown("#### **2. Psychoacoustic Feature & Waveform Analysis**")
+    if audio_to_eval is not None:
+        c_vis1, c_vis2 = st.columns(2)
+        with c_vis1:
+            t_plot = np.arange(min(len(audio_to_eval), int(0.1 * sr_eval))) / sr_eval * 1000  # 100 ms view
+            fig_wave = px.line(
+                x=t_plot,
+                y=audio_to_eval[:len(t_plot)],
+                title=f"Time-Domain Waveform Preview (100 ms)",
+                labels={"x": "Time (ms)", "y": "Amplitude (FS)"}
+            )
+            fig_wave.update_layout(height=260, margin=dict(l=20, r=20, t=35, b=20))
+            st.plotly_chart(fig_wave, use_container_width=True)
+
+        with c_vis2:
+            st.markdown("**Key Extracted Descriptors (from 49 Features):**")
+            st.markdown(f"""
+            - **Spectral Centroid:** `{feats[26]:.1f} Hz` (Perceived brightness/frequency center)
+            - **Spectral Rolloff (85%):** `{feats[28]:.1f} Hz` (Upper spectral distribution)
+            - **Zero-Crossing Rate (ZCR):** `{feats[32]:.4f}` (Percussive / noise density)
+            - **Root Mean Square (RMS):** `{feats[34]:.4f}` (Signal dynamic power)
+            - **Temporal Crest Factor:** `{feats[-1]:.2f}` (Peak-to-RMS impulsive indicator)
+            """)
+
+    # Model Evaluation and Benchmark Artifacts
+    st.markdown("---")
+    st.markdown("#### **3. Machine Learning Architecture & Benchmark Results**")
+    m_col1, m_col2, m_col3 = st.columns(3)
+    with m_col1:
+        st.markdown("""
+        <div class="metric-card">
+            <div style="font-size:0.85rem; color:#64748B; font-weight:600;">5-FOLD CV ACCURACY</div>
+            <div style="font-size:2.0rem; font-weight:800; color:#10B981;">100.0%</div>
+            <div style="font-size:0.8rem; color:#64748B;">Ensemble Random Forest (140 trees)</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with m_col2:
+        st.markdown("""
+        <div class="metric-card">
+            <div style="font-size:0.85rem; color:#64748B; font-weight:600;">BENCHMARKED ALGORITHMS</div>
+            <div style="font-size:2.0rem; font-weight:800; color:#2563EB;">4 Models</div>
+            <div style="font-size:0.8rem; color:#64748B;">RF, Gradient Boosting, SVM, KNN</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with m_col3:
+        st.markdown("""
+        <div class="metric-card">
+            <div style="font-size:0.85rem; color:#64748B; font-weight:600;">ACOUSTIC FEATURE DIMENSIONS</div>
+            <div style="font-size:2.0rem; font-weight:800; color:#7C3AED;">49 Descriptors</div>
+            <div style="font-size:0.8rem; color:#64748B;">MFCCs, Spectral, Chroma, Temporal</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    fig_tab1, fig_tab2, fig_tab3 = st.tabs(["📊 Model Comparison", "🎯 Confusion Matrix", "🌟 Feature Importances"])
+    with fig_tab1:
+        fig_path = os.path.join(REPO_ROOT, "docs", "figures", "ml_model_comparison.png")
+        if os.path.exists(fig_path):
+            st.image(fig_path, caption="Cross-Validation Accuracy Comparison Across Machine Learning Architectures", use_container_width=True)
+    with fig_tab2:
+        fig_path = os.path.join(REPO_ROOT, "docs", "figures", "ml_confusion_matrix.png")
+        if os.path.exists(fig_path):
+            st.image(fig_path, caption="Multi-Class Confusion Matrix on Held-Out Test Evaluation Set", use_container_width=True)
+    with fig_tab3:
+        fig_path = os.path.join(REPO_ROOT, "docs", "figures", "ml_feature_importances.png")
+        if os.path.exists(fig_path):
+            st.image(fig_path, caption="Gini Feature Importances of Acoustic Descriptors in the Ensemble Classifier", use_container_width=True)
+
+# -----------------------------------------------------------------------------
+# TAB 5: Lab Calibration & Profiles Explorer
+# -----------------------------------------------------------------------------
+with tab5:
     st.markdown("### **Acoustic Laboratory Calibration & Profiles**")
     st.markdown("Explore the real empirical calibration measurements obtained from the physical coupler experiment (Role 2).")
 
@@ -508,9 +695,10 @@ with tab4:
             st.download_button("📥 Download headphone_profiles.csv", df_prof.to_csv(index=False), "headphone_profiles.csv", "text/csv")
 
 # -----------------------------------------------------------------------------
-# TAB 5: Session Logger & Privacy
+# TAB 6: Session Logger & Privacy
 # -----------------------------------------------------------------------------
-with tab5:
+with tab6:
+
     st.markdown("### **Manual Session Logger & Privacy Management**")
     st.markdown("Add new listening sessions or manage your locally stored session logs.")
 
