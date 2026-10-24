@@ -66,6 +66,46 @@ def test_aggregate_daily_exposure():
     assert daily["total_duration_hours"].iloc[0] == pytest.approx(2.5)
     assert daily["daily_dose_pct"].iloc[0] > 0.0
 
+def test_combined_headphone_and_ambient_aggregation():
+    # Day with 1 headphone session and 1 ambient noise session
+    df = pd.DataFrame([
+        {
+            "session_id": "hp_1",
+            "start_time": "2026-10-21 08:00:00",
+            "end_time": "2026-10-21 10:00:00",  # 2.0 hrs
+            "profile_id": "prof_sony_wh1000xm4",
+            "volume_step": 10,
+            "max_step": 15,
+            "label": "music_listening",
+            "source_type": "headphone"
+        },
+        {
+            "session_id": "amb_1",
+            "start_time": "2026-10-21 12:00:00",
+            "end_time": "2026-10-21 13:00:00",  # 1.0 hr
+            "profile_id": "ambient_traffic",
+            "volume_step": 78,
+            "max_step": 100,
+            "label": "city_commute",
+            "source_type": "ambient"
+        }
+    ])
+    enriched = enrich_sessions(df)
+    assert "source_type" in enriched.columns
+    assert enriched["source_type"].tolist() == ["headphone", "ambient"]
+    
+    daily = aggregate_daily_exposure(enriched)
+    assert len(daily) == 1
+    row = daily.iloc[0]
+    assert row["headphone_duration_hours"] == pytest.approx(2.0)
+    assert row["ambient_duration_hours"] == pytest.approx(1.0)
+    assert row["total_duration_hours"] == pytest.approx(3.0)
+    assert row["headphone_dose_pct"] > 0
+    assert row["ambient_dose_pct"] > 0
+    assert row["daily_dose_pct"] == pytest.approx(row["headphone_dose_pct"] + row["ambient_dose_pct"])
+    assert row["laeq_combined"] is not None
+
+
 def test_evaluate_exposure_alerts():
     # Safe condition
     safe_alerts = evaluate_exposure_alerts(daily_dose_pct=25.0, current_level_dba=72.0)

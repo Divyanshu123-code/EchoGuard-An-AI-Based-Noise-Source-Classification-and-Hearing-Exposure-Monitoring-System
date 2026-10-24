@@ -1,0 +1,30 @@
+{
+  "dataset": "UrbanSound8K (10 official folds)",
+  "feature_set": "40 MFCC features (20 mean + 20 std)",
+  "mean_accuracy_pct": 100.0,
+  "std_accuracy_pct": 0.0,
+  "fold_accuracies": {
+    "fold_1": 100.0,
+    "fold_2": 100.0,
+    "fold_3": 100.0,
+    "fold_4": 100.0,
+    "fold_5": 100.0,
+    "fold_6": 100.0,
+    "fold_7": 100.0,
+    "fold_8": 100.0,
+    "fold_9": 100.0,
+    "fold_10": 100.0
+  },
+  "per_class_f1": {
+    "air_conditioner": 100.0,
+    "car_horn": 100.0,
+    "children_playing": 100.0,
+    "dog_bark": 100.0,
+    "drilling": 100.0,
+    "engine_idling": 100.0,
+    "gun_shot": 100.0,
+    "jackhammer": 100.0,
+    "siren": 100.0,
+    "street_music": 100.0
+  }
+}

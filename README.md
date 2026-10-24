@@ -10,37 +10,39 @@ EchoGuard is an intelligent acoustic monitoring system that combines empirical a
 ## 🌟 Key Features
 
 1. **AI-Based Noise Source Classification (Role 3):**
-   - 49-dimensional psychoacoustic feature extraction (MFCCs 1–13 means & stds, spectral centroid, spectral rolloff, spectral bandwidth, zero-crossing rate, chroma vectors, and temporal crest factor).
+   - **UrbanSound8K 10-Fold Baseline Evaluation:** Official predefined 10-fold cross-validation (no random splits / no data leakage) on all 10 environmental classes (`air_conditioner`, `car_horn`, `children_playing`, `dog_bark`, `drilling`, `engine_idling`, `gun_shot`, `jackhammer`, `siren`, `street_music`) using 40 MFCC descriptors, fold-by-fold accuracy tracking, and 10x10 cumulative confusion matrix.
+   - **Psychoacoustic Feature Extractor:** 49-dimensional spectral & temporal descriptors (MFCCs 1–13 means & stds, spectral centroid, spectral rolloff, spectral bandwidth, zero-crossing rate, chroma vectors, and temporal crest factor).
    - Multi-model evaluation comparing **Random Forest**, **Gradient Boosting**, **Support Vector Machines (SVM)**, and **K-Nearest Neighbors (KNN)**.
-   - Real-time classification across 6 environmental and listening categories:
-     - `ambient_quiet` (Room noise floor, low exposure risk)
-     - `speech_podcast` (Vocal formants, conversational dynamics)
-     - `music` (Harmonic structures, dynamic crest factor)
-     - `traffic_transport` (Low-frequency rumble & road pass-bys)
-     - `machinery_industrial` (High-intensity continuous mechanical hum)
-     - `siren_alarm` (Frequency-modulated emergency alerting)
-   - 100.0% 5-fold cross-validation accuracy on standardized benchmark evaluation.
+   - Real-time classification across 6 core listening & environmental categories with confidence distributions.
 
-2. **Empirical Acoustic Coupler Calibration (Role 2):**
+2. **Unified Headphone + Ambient Exposure Engine (FR8, FR9, Role 1):**
+   - **Combined Daily Sound Dose:** Calculates total cumulative daily exposure across both sources:
+     $$D_{\text{total}} = D_{\text{headphone}} + D_{\text{ambient}}$$
+   - **Equivalent Continuous Sound Level ($L_{\text{Aeq}}$):** Logarithmic energy accumulation tracking total continuous acoustic power:
+     $$L_{\text{Aeq, combined}} = 10 \log_{10} \left( \frac{1}{\sum t} \sum t_i 10^{L_i / 10} \right)$$
+   - **Separate vs. Combined Reporting:** Visualized via side-by-side KPI cards, stacked weekly bar charts, and dose alerts at 50%, 80%, and 100% of safe daily boundaries.
+
+3. **Empirical Acoustic Coupler Calibration (Role 2):**
    - Physical acoustic coupler testbench (~15 cm³ sealed paper-cup chamber).
    - Dayton Audio iMM-6 calibrated condenser capsule with locked analog gain.
    - Microphonic offset calibration ($+94.2\text{ dB}$) against certified reference sound-level meters.
    - 135 empirical measurements across 15 discrete system volume increments and 4 standard stimuli (`tone1k`, `pink`, `music1`, `music2`).
    - Quantified physical repeatability repositioning variance ($\sigma = 0.58\text{ dB}$ to $1.37\text{ dB}$).
 
-3. **Core Acoustic DSP & Exposure Dosage (Role 1):**
+4. **Core Acoustic DSP & Exposure Dosage (Role 1):**
    - Digital A-weighting filter implementation adhering to IEC 61672-1.
    - Switchable safety exposure standards:
      - **NIOSH:** 85 dBA Recommended Exposure Limit (REL) with 3 dB exchange rate ($T = 8 / 2^{(L - 85)/3}$).
      - **WHO-ITU:** 80 dBA weekly baseline limit (40 hours/week).
    - Continuous dosage accumulator, remaining safe time projection, and adaptive habit coaching.
 
-4. **Live macOS Real-Time Monitor:**
+5. **Live macOS Real-Time Monitor:**
    - Background daemon (`monitor_laptop.py`) tracking active media playback assertions (Spotify, YouTube, Zoom, VLC, Apple Music).
    - Dynamic terminal HUD reporting instantaneous volume step, ear-canal dBA, and safe time remaining.
    - Automatic session logging with persistent synchronization into the dashboard.
 
-5. **Interactive Streamlit Dashboard:**
+6. **Interactive Streamlit Dashboard:**
+
    - **Tab 1: Today's Exposure & Status:** Real-time gauge, KPI metrics, session table, and smart safety warnings.
    - **Tab 2: Live Volume & Ear Simulator:** Dual-engine estimation (Coupler Lookup vs. Gradient Boosting AI Regressor) with 50 ms waveform preview.
    - **Tab 3: Weekly Trends & Habit Insights:** 7-day dose bar charts, listening duration analytics, and habit coaching.

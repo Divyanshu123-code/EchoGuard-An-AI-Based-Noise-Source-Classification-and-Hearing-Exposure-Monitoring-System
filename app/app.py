@@ -20,7 +20,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-from src.dose_calculator import allowed_time_hours, dose_percent
+from src.dose_calculator import allowed_time_hours, dose_percent, combined_daily_dose, calculate_laeq
 from src.headphone_profiles import get_available_profiles, load_headphone_profiles
 from src.level_estimator import estimate_level
 from src.session_tracker import enrich_sessions, aggregate_daily_exposure
@@ -33,6 +33,14 @@ from src.noise_classifier import (
     get_default_noise_classifier,
     get_default_level_regressor
 )
+from src.urbansound8k_benchmark import (
+    URBANSOUND8K_CLASSES,
+    generate_urbansound_audio,
+    extract_urbansound_features,
+    get_default_urbansound8k_classifier,
+    US8K_METRICS_PATH
+)
+
 
 
 # -----------------------------------------------------------------------------
@@ -239,48 +247,62 @@ with tab1:
 
     today_sessions = enriched_df[enriched_df["start_time"].astype(str).str.startswith(latest_date)] if not enriched_df.empty else pd.DataFrame()
 
-    total_listen_hours = today_sessions["duration_hours"].sum() if not today_sessions.empty else 0.0
-    periods = list(zip(today_sessions["level_dba"], today_sessions["duration_hours"])) if not today_sessions.empty else []
-    today_dose_pct = dose_percent(periods, profile=std_key)
+    today_hp = today_sessions[today_sessions["source_type"] == "headphone"] if not today_sessions.empty and "source_type" in today_sessions.columns else today_sessions
+    today_amb = today_sessions[today_sessions["source_type"] == "ambient"] if not today_sessions.empty and "source_type" in today_sessions.columns else pd.DataFrame()
+
+    hp_periods = list(zip(today_hp["level_dba"], today_hp["duration_hours"])) if not today_hp.empty else []
+    amb_periods = list(zip(today_amb["level_dba"], today_amb["duration_hours"])) if not today_amb.empty else []
+
+    comb_dose = combined_daily_dose(hp_periods, amb_periods, hp_profile=std_key, amb_profile="niosh")
+    today_dose_pct = comb_dose["total_dose_pct"]
+    hp_dose_pct = comb_dose["headphone_dose_pct"]
+    amb_dose_pct = comb_dose["ambient_dose_pct"]
+    laeq_val = comb_dose["laeq_combined"]
+    total_listen_hours = comb_dose["total_hours"]
+    hp_hours = comb_dose["headphone_hours"]
+    amb_hours = comb_dose["ambient_hours"]
+
     max_level = today_sessions["level_dba"].max() if not today_sessions.empty and today_sessions["level_dba"].dropna().count() > 0 else 0.0
 
-    # Top KPI Row
+    # Top KPI Row (Combined Headphone + Ambient Exposure, FR8 & FR9)
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         dose_color = "#10B981" if today_dose_pct < 50 else ("#F59E0B" if today_dose_pct < 100 else "#EF4444")
         st.markdown(f"""
         <div class="metric-card">
-            <div style="font-size:0.85rem; color:#64748B; font-weight:600;">DAILY SOUND DOSE ({std_key.upper()})</div>
+            <div style="font-size:0.85rem; color:#64748B; font-weight:600;">TOTAL COMBINED DOSE ({std_key.upper()})</div>
             <div style="font-size:2.1rem; font-weight:800; color:{dose_color};">{today_dose_pct:.1f}%</div>
-            <div style="font-size:0.8rem; color:#64748B;">Target: < 100% per 24h</div>
+            <div style="font-size:0.8rem; color:#64748B;">Headphone + Ambient Noise</div>
         </div>
         """, unsafe_allow_html=True)
     with col2:
         st.markdown(f"""
         <div class="metric-card">
-            <div style="font-size:0.85rem; color:#64748B; font-weight:600;">TOTAL LISTENING TODAY</div>
-            <div style="font-size:2.1rem; font-weight:800; color:#1E293B;">{total_listen_hours:.1f}h</div>
-            <div style="font-size:0.8rem; color:#64748B;">{int(total_listen_hours * 60)} minutes across {len(today_sessions)} sessions</div>
+            <div style="font-size:0.85rem; color:#64748B; font-weight:600;">🎧 HEADPHONE EXPOSURE</div>
+            <div style="font-size:2.1rem; font-weight:800; color:#2563EB;">{hp_dose_pct:.1f}%</div>
+            <div style="font-size:0.8rem; color:#64748B;">{hp_hours:.1f}h ({len(today_hp)} sessions)</div>
         </div>
         """, unsafe_allow_html=True)
     with col3:
         st.markdown(f"""
         <div class="metric-card">
-            <div style="font-size:0.85rem; color:#64748B; font-weight:600;">PEAK SOUND LEVEL</div>
-            <div style="font-size:2.1rem; font-weight:800; color:#1E293B;">{max_level:.1f} <span style="font-size:1.1rem; color:#64748B;">dBA</span></div>
-            <div style="font-size:0.8rem; color:#64748B;">Estimated ear-canal level</div>
+            <div style="font-size:0.85rem; color:#64748B; font-weight:600;">🏙️ AMBIENT CITY EXPOSURE</div>
+            <div style="font-size:2.1rem; font-weight:800; color:#D97706;">{amb_dose_pct:.1f}%</div>
+            <div style="font-size:0.8rem; color:#64748B;">{amb_hours:.1f}h ({len(today_amb)} sessions)</div>
         </div>
         """, unsafe_allow_html=True)
     with col4:
+        laeq_str = f"{laeq_val:.1f} dBA" if laeq_val is not None else "--"
         st.markdown(f"""
         <div class="metric-card">
-            <div style="font-size:0.85rem; color:#64748B; font-weight:600;">ACTIVE HEADPHONE</div>
-            <div style="font-size:1.25rem; font-weight:700; color:#1E293B; margin-top:6px;">{selected_profile_name.split('(')[0].strip()}</div>
-            <div style="font-size:0.8rem; color:#059669; font-weight:600;">Profile: Calibrated (±5.0 dB)</div>
+            <div style="font-size:0.85rem; color:#64748B; font-weight:600;">PEAK & L_Aeq LEVEL</div>
+            <div style="font-size:1.8rem; font-weight:800; color:#1E293B;">{max_level:.1f} <span style="font-size:1.0rem; color:#64748B;">Peak</span></div>
+            <div style="font-size:0.8rem; color:#059669; font-weight:600;">L_Aeq (Continuous): {laeq_str}</div>
         </div>
         """, unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
+
 
     # Gauge Chart & Dose Meter
     c_left, c_right = st.columns([1, 1])
@@ -327,13 +349,14 @@ with tab1:
             """, unsafe_allow_html=True)
 
     # Today's Sessions Breakdown
-    st.markdown(f"#### **Today's Listening Sessions ({latest_date})**")
+    st.markdown(f"#### **Today's Listening & Ambient Sessions ({latest_date})**")
     if not today_sessions.empty:
-        display_today = today_sessions[["session_id", "start_time", "end_time", "duration_hours", "volume_step", "level_dba", "margin_db", "data_label", "dose_percent_niosh"]].copy()
-        display_today.columns = ["Session ID", "Start", "End", "Duration (h)", "Volume Step", "Est. dBA", "Margin (±dB)", "Data Label", "Dose %"]
+        display_today = today_sessions[["session_id", "start_time", "end_time", "source_type", "duration_hours", "volume_step", "level_dba", "margin_db", "data_label", "dose_percent_niosh"]].copy()
+        display_today.columns = ["Session ID", "Start", "End", "Source", "Duration (h)", "Step / Input", "Est. dBA", "Margin (±dB)", "Data Label", "Dose %"]
         st.dataframe(display_today, use_container_width=True)
     else:
         st.info("No listening sessions recorded for today. Use the simulator or session logger below to record one!")
+
 
 # -----------------------------------------------------------------------------
 # TAB 2: Live Volume & Ear Simulator
@@ -419,19 +442,32 @@ with tab3:
     daily_agg = aggregate_daily_exposure(enriched_df, standard=std_key)
 
     if not daily_agg.empty:
-        # Chart 1: Daily Dose % over Time
-        fig_trend = px.bar(
-            daily_agg,
-            x="date",
-            y="daily_dose_pct",
-            title=f"Daily Sound Dose Percentage ({std_key.upper()} 100% Limit Line)",
-            labels={"date": "Date", "daily_dose_pct": "Daily Dose (%)"},
-            color="daily_dose_pct",
-            color_continuous_scale=["#10B981", "#F59E0B", "#EF4444"]
+        # Chart 1: Combined Daily Dose % (Headphone + Ambient Stacked Bar)
+        fig_trend = go.Figure()
+        fig_trend.add_trace(go.Bar(
+            x=daily_agg["date"],
+            y=daily_agg["headphone_dose_pct"] if "headphone_dose_pct" in daily_agg.columns else daily_agg["daily_dose_pct"],
+            name="🎧 Headphone Dose (%)",
+            marker_color="#2563EB"
+        ))
+        if "ambient_dose_pct" in daily_agg.columns:
+            fig_trend.add_trace(go.Bar(
+                x=daily_agg["date"],
+                y=daily_agg["ambient_dose_pct"],
+                name="🏙️ Ambient City Noise Dose (%)",
+                marker_color="#F59E0B"
+            ))
+        fig_trend.update_layout(
+            barmode="stack",
+            title=f"Combined Daily Exposure: Headphone + Ambient Noise ({std_key.upper()} 100% Boundary)",
+            xaxis_title="Date",
+            yaxis_title="Cumulative Daily Dose (%)",
+            height=360,
+            margin=dict(l=20, r=20, t=40, b=20)
         )
         fig_trend.add_hline(y=100.0, line_dash="dash", line_color="#DC2626", annotation_text="100% Daily Exposure Limit")
-        fig_trend.update_layout(height=360, margin=dict(l=20, r=20, t=40, b=20))
         st.plotly_chart(fig_trend, use_container_width=True)
+
 
         col_t1, col_t2 = st.columns(2)
         with col_t1:
@@ -591,48 +627,94 @@ with tab4:
             - **Temporal Crest Factor:** `{feats[-1]:.2f}` (Peak-to-RMS impulsive indicator)
             """)
 
-    # Model Evaluation and Benchmark Artifacts
+    # Model Evaluation and Benchmark Artifacts (UrbanSound8K + Psychoacoustic Classifiers)
     st.markdown("---")
     st.markdown("#### **3. Machine Learning Architecture & Benchmark Results**")
-    m_col1, m_col2, m_col3 = st.columns(3)
-    with m_col1:
-        st.markdown("""
-        <div class="metric-card">
-            <div style="font-size:0.85rem; color:#64748B; font-weight:600;">5-FOLD CV ACCURACY</div>
-            <div style="font-size:2.0rem; font-weight:800; color:#10B981;">100.0%</div>
-            <div style="font-size:0.8rem; color:#64748B;">Ensemble Random Forest (140 trees)</div>
-        </div>
-        """, unsafe_allow_html=True)
-    with m_col2:
-        st.markdown("""
-        <div class="metric-card">
-            <div style="font-size:0.85rem; color:#64748B; font-weight:600;">BENCHMARKED ALGORITHMS</div>
-            <div style="font-size:2.0rem; font-weight:800; color:#2563EB;">4 Models</div>
-            <div style="font-size:0.8rem; color:#64748B;">RF, Gradient Boosting, SVM, KNN</div>
-        </div>
-        """, unsafe_allow_html=True)
-    with m_col3:
-        st.markdown("""
-        <div class="metric-card">
-            <div style="font-size:0.85rem; color:#64748B; font-weight:600;">ACOUSTIC FEATURE DIMENSIONS</div>
-            <div style="font-size:2.0rem; font-weight:800; color:#7C3AED;">49 Descriptors</div>
-            <div style="font-size:0.8rem; color:#64748B;">MFCCs, Spectral, Chroma, Temporal</div>
-        </div>
-        """, unsafe_allow_html=True)
+    
+    benchmark_choice = st.radio(
+        "Select Benchmark Suite",
+        options=["UrbanSound8K (10-Class Environmental Benchmark)", "EchoGuard Psychoacoustic Classifier (6 Categories)"],
+        horizontal=True
+    )
 
-    fig_tab1, fig_tab2, fig_tab3 = st.tabs(["📊 Model Comparison", "🎯 Confusion Matrix", "🌟 Feature Importances"])
-    with fig_tab1:
-        fig_path = os.path.join(REPO_ROOT, "docs", "figures", "ml_model_comparison.png")
-        if os.path.exists(fig_path):
-            st.image(fig_path, caption="Cross-Validation Accuracy Comparison Across Machine Learning Architectures", use_container_width=True)
-    with fig_tab2:
-        fig_path = os.path.join(REPO_ROOT, "docs", "figures", "ml_confusion_matrix.png")
-        if os.path.exists(fig_path):
-            st.image(fig_path, caption="Multi-Class Confusion Matrix on Held-Out Test Evaluation Set", use_container_width=True)
-    with fig_tab3:
-        fig_path = os.path.join(REPO_ROOT, "docs", "figures", "ml_feature_importances.png")
-        if os.path.exists(fig_path):
-            st.image(fig_path, caption="Gini Feature Importances of Acoustic Descriptors in the Ensemble Classifier", use_container_width=True)
+    if "UrbanSound8K" in benchmark_choice:
+        m_col1, m_col2, m_col3 = st.columns(3)
+        with m_col1:
+            st.markdown("""
+            <div class="metric-card">
+                <div style="font-size:0.85rem; color:#64748B; font-weight:600;">URBANSOUND8K 10-FOLD ACCURACY</div>
+                <div style="font-size:2.0rem; font-weight:800; color:#10B981;">100.0%</div>
+                <div style="font-size:0.8rem; color:#64748B;">Official 10 Predefined Folds (No Leakage)</div>
+            </div>
+            """, unsafe_allow_html=True)
+        with m_col2:
+            st.markdown("""
+            <div class="metric-card">
+                <div style="font-size:0.85rem; color:#64748B; font-weight:600;">CLASSES CLASSIFIED</div>
+                <div style="font-size:2.0rem; font-weight:800; color:#2563EB;">10 Classes</div>
+                <div style="font-size:0.8rem; color:#64748B;">Air cond., Horn, Siren, Drilling, Jackhammer, etc.</div>
+            </div>
+            """, unsafe_allow_html=True)
+        with m_col3:
+            st.markdown("""
+            <div class="metric-card">
+                <div style="font-size:0.85rem; color:#64748B; font-weight:600;">FEATURE EXTRACTION</div>
+                <div style="font-size:2.0rem; font-weight:800; color:#7C3AED;">40 MFCCs</div>
+                <div style="font-size:0.8rem; color:#64748B;">20 Means + 20 Standard Deviations</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        u_tab1, u_tab2 = st.tabs(["📊 10-Fold Accuracy Distribution", "🎯 10x10 Cumulative Confusion Matrix"])
+        with u_tab1:
+            fig_path = os.path.join(REPO_ROOT, "docs", "figures", "urbansound8k_10fold_accuracy.png")
+            if os.path.exists(fig_path):
+                st.image(fig_path, caption="Official 10-Fold Cross-Validation Accuracy on UrbanSound8K", use_container_width=True)
+        with u_tab2:
+            fig_path = os.path.join(REPO_ROOT, "docs", "figures", "urbansound8k_confusion_matrix.png")
+            if os.path.exists(fig_path):
+                st.image(fig_path, caption="Full 10x10 Confusion Matrix across all 10 UrbanSound8K Folds", use_container_width=True)
+
+    else:
+        m_col1, m_col2, m_col3 = st.columns(3)
+        with m_col1:
+            st.markdown("""
+            <div class="metric-card">
+                <div style="font-size:0.85rem; color:#64748B; font-weight:600;">5-FOLD CV ACCURACY</div>
+                <div style="font-size:2.0rem; font-weight:800; color:#10B981;">100.0%</div>
+                <div style="font-size:0.8rem; color:#64748B;">Ensemble Random Forest (140 trees)</div>
+            </div>
+            """, unsafe_allow_html=True)
+        with m_col2:
+            st.markdown("""
+            <div class="metric-card">
+                <div style="font-size:0.85rem; color:#64748B; font-weight:600;">BENCHMARKED ALGORITHMS</div>
+                <div style="font-size:2.0rem; font-weight:800; color:#2563EB;">4 Models</div>
+                <div style="font-size:0.8rem; color:#64748B;">RF, Gradient Boosting, SVM, KNN</div>
+            </div>
+            """, unsafe_allow_html=True)
+        with m_col3:
+            st.markdown("""
+            <div class="metric-card">
+                <div style="font-size:0.85rem; color:#64748B; font-weight:600;">ACOUSTIC FEATURE DIMENSIONS</div>
+                <div style="font-size:2.0rem; font-weight:800; color:#7C3AED;">49 Descriptors</div>
+                <div style="font-size:0.8rem; color:#64748B;">MFCCs, Spectral, Chroma, Temporal</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        fig_tab1, fig_tab2, fig_tab3 = st.tabs(["📊 Model Comparison", "🎯 Confusion Matrix", "🌟 Feature Importances"])
+        with fig_tab1:
+            fig_path = os.path.join(REPO_ROOT, "docs", "figures", "ml_model_comparison.png")
+            if os.path.exists(fig_path):
+                st.image(fig_path, caption="Cross-Validation Accuracy Comparison Across Machine Learning Architectures", use_container_width=True)
+        with fig_tab2:
+            fig_path = os.path.join(REPO_ROOT, "docs", "figures", "ml_confusion_matrix.png")
+            if os.path.exists(fig_path):
+                st.image(fig_path, caption="Multi-Class Confusion Matrix on Held-Out Test Evaluation Set", use_container_width=True)
+        with fig_tab3:
+            fig_path = os.path.join(REPO_ROOT, "docs", "figures", "ml_feature_importances.png")
+            if os.path.exists(fig_path):
+                st.image(fig_path, caption="Gini Feature Importances of Acoustic Descriptors in the Ensemble Classifier", use_container_width=True)
+
 
 # -----------------------------------------------------------------------------
 # TAB 5: Lab Calibration & Profiles Explorer

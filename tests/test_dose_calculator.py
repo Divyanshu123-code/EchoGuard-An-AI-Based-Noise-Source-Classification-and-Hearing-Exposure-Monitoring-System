@@ -19,3 +19,25 @@ def test_missing_levels_skipped_never_zero():
     # but must NOT convert to 0 dBA (which would falsely imply silence)
     assert dose_percent([(None, 2), (85, 8)]) == pytest.approx(100.0)
     assert dose_percent([(None, 5)]) == pytest.approx(0.0)
+
+def test_calculate_laeq():
+    from src.dose_calculator import calculate_laeq
+    # Equal duration of 80 dBA and 80 dBA -> 80.0 dBA
+    assert calculate_laeq([(80, 2), (80, 2)]) == pytest.approx(80.0, 0.1)
+    # Energy sum of two equal 80 dBA components doubles energy -> +3 dB = 83.0 dBA if combined simultaneously,
+    # or equal sequential levels remain 80.0 dBA
+    assert calculate_laeq([(85, 4), (91, 2)]) is not None
+    assert calculate_laeq([]) is None
+
+def test_combined_daily_dose():
+    from src.dose_calculator import combined_daily_dose
+    # Headphone: 85 dBA for 4 hours (50% NIOSH dose)
+    # Ambient: 85 dBA for 4 hours (50% NIOSH dose)
+    # Combined: 100% dose
+    res = combined_daily_dose([(85, 4)], [(85, 4)], hp_profile="niosh", amb_profile="niosh")
+    assert res["headphone_dose_pct"] == pytest.approx(50.0, 0.1)
+    assert res["ambient_dose_pct"] == pytest.approx(50.0, 0.1)
+    assert res["total_dose_pct"] == pytest.approx(100.0, 0.1)
+    assert res["total_hours"] == pytest.approx(8.0)
+    assert res["laeq_combined"] == pytest.approx(85.0, 0.1)
+
