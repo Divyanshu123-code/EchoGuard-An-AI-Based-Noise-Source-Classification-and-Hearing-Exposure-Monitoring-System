@@ -89,6 +89,96 @@ def resolve_profile_for_device(device_name: str) -> tuple[str, str]:
     else:
         return "prof_generic_inear", f"{device_name} (Generic In-Ear)"
 
+def append_session_to_csv(row_dict: dict):
+    """Safely appends a session record to data/sample_sessions.csv."""
+    os.makedirs(os.path.dirname(SESSIONS_CSV), exist_ok=True)
+    df = pd.DataFrame([row_dict])
+    if os.path.exists(SESSIONS_CSV) and os.path.getsize(SESSIONS_CSV) > 0:
+        df.to_csv(SESSIONS_CSV, mode="a", header=False, index=False)
+    else:
+        df.to_csv(SESSIONS_CSV, index=False)
+
+def get_live_system_state() -> dict:
+    """
+    Queries current live macOS hardware status (volume, audio device, playback, dBA).
+    Safe to call directly from Streamlit on every rerun.
+    """
+    now = datetime.datetime.now()
+    vol_pct, is_muted = get_system_volume()
+    device_name = get_default_output_device()
+    is_playing = is_audio_playing() and not is_muted and vol_pct > 0
+    vol_step = volume_pct_to_step(vol_pct, max_step=15)
+    profile_id, profile_label = resolve_profile_for_device(device_name)
+    est = estimate_level(vol_step if not is_muted else None, 15, profile_id)
+    allowed_hrs = allowed_time_hours(est["level_dba"], "niosh") if est["level_dba"] else None
+
+    return {
+        "timestamp": now.strftime("%H:%M:%S"),
+        "date": now.strftime("%Y-%m-%d"),
+        "device": device_name,
+        "profile_id": profile_id,
+        "profile_label": profile_label,
+        "volume_pct": vol_pct,
+        "volume_step": vol_step,
+        "is_playing": is_playing,
+        "is_muted": is_muted,
+        "current_dba": est["level_dba"],
+        "margin_db": est["margin_db"],
+        "data_label": est["label"],
+        "allowed_hours": allowed_hrs
+    }
+
+def record_live_ambient_reading(duration_sec: float = 3.0, offset_db: float = 94.2, log_session: bool = False) -> dict:
+    """
+    Captures live audio from the laptop's physical microphone, computes calibrated dBA,
+    classifies the ambient noise category, and optionally logs it to sample_sessions.csv.
+    """
+    import sounddevice as sd
+    import numpy as np
+    from src.audio_level import dba_from_audio
+    from src.noise_classifier import get_default_noise_classifier
+
+    fs = 44100
+    rec_raw = sd.rec(int(duration_sec * fs), samplerate=fs, channels=1, dtype="float32")
+    sd.wait()
+    audio = rec_raw[:, 0]
+
+    dba = float(dba_from_audio(audio, fs, offset_db))
+    peak = float(np.max(np.abs(audio)))
+
+    clf = get_default_noise_classifier()
+    pred_class = clf.predict(audio, sr=fs)
+    probs = clf.predict_proba(audio, sr=fs)
+
+    now = datetime.datetime.now()
+    start_time = now - datetime.timedelta(seconds=duration_sec)
+
+    if log_session:
+        session_id = f"amb_{int(now.timestamp())}"
+        new_row = {
+            "session_id": session_id,
+            "start_time": start_time.strftime("%Y-%m-%d %H:%M:%S"),
+            "end_time": now.strftime("%Y-%m-%d %H:%M:%S"),
+            "profile_id": f"ambient_{pred_class}",
+            "volume_step": int(min(100, max(1, round(dba)))),
+            "max_step": 100,
+            "label": f"live_ambient_{pred_class}",
+            "source_type": "ambient",
+            "level_dba": round(dba, 1)
+        }
+        append_session_to_csv(new_row)
+
+    return {
+        "audio": audio,
+        "fs": fs,
+        "dba": dba,
+        "peak": peak,
+        "predicted_class": pred_class,
+        "probabilities": probs,
+        "timestamp": now.strftime("%H:%M:%S"),
+        "duration_sec": duration_sec
+    }
+
 class LaptopExposureMonitor:
     """
     Tracks audio playback sessions, calculates exposure, and writes to data/sample_sessions.csv.
@@ -136,16 +226,10 @@ class LaptopExposureMonitor:
                 "profile_id": self.current_profile_id,
                 "volume_step": avg_step,
                 "max_step": 15,
-                "label": f"macos_{self.current_device.replace(' ', '_').lower()}"
+                "label": f"macos_{self.current_device.replace(' ', '_').lower()}",
+                "source_type": "headphone"
             }
-            
-            # Append to CSV
-            os.makedirs(os.path.dirname(SESSIONS_CSV), exist_ok=True)
-            df = pd.DataFrame([new_row])
-            if os.path.exists(SESSIONS_CSV) and os.path.getsize(SESSIONS_CSV) > 0:
-                df.to_csv(SESSIONS_CSV, mode="a", header=False, index=False)
-            else:
-                df.to_csv(SESSIONS_CSV, index=False)
+            append_session_to_csv(new_row)
                 
             est = estimate_level(avg_step, 15, self.current_profile_id)
             print(f"⏹️ [Session Completed & Saved] Duration: {duration_sec:.1f}s ({duration_sec/60:.2f} min) | Avg Step: {avg_step}/15 | Est: {est['level_dba']:.1f} dBA")

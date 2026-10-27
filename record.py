@@ -72,13 +72,16 @@ def get_simulated_audio(signal: str, step: int, max_step: int, fs: int = FS, sec
     return np.clip(audio.astype(np.float32), -0.98, 0.98)
 
 def main():
-    parser = argparse.ArgumentParser(description="EchoGuard Role 2 Audio Calibration Logger")
+    parser = argparse.ArgumentParser(description="EchoGuard Audio Recording & Calibration Logger")
     parser.add_argument("--headphone", default=DEFAULT_HEADPHONE, help="Headphone model name")
     parser.add_argument("--offset", type=float, default=DEFAULT_OFFSET, help="Microphone calibration offset in dB")
     parser.add_argument("--max_step", type=int, default=DEFAULT_MAX_STEP, help="Max volume step on device")
     parser.add_argument("--output_csv", default="data/calibration.csv", help="Target CSV file path")
     parser.add_argument("--mock", action="store_true", help="Use simulated acoustic capture (for headless/testing)")
     parser.add_argument("--batch", action="store_true", help="Run full 15-step x 4-signal sweep automatically")
+    parser.add_argument("--device", type=int, default=None, help="Audio input device index")
+    parser.add_argument("--duration", type=float, default=SECONDS, help="Recording duration in seconds")
+    parser.add_argument("--output", type=str, default=None, help="Save quick one-shot WAV recording to file")
     args = parser.parse_args()
 
     os.makedirs(os.path.dirname(args.output_csv), exist_ok=True)
@@ -90,12 +93,30 @@ def main():
         try:
             import sounddevice as sd
             # Test if input device is available
-            devices = sd.query_devices()
             default_in = sd.query_devices(kind='input')
             print(f"[Audio Hardware] Found input device: {default_in['name']}")
         except Exception as e:
             print(f"[Notice] Physical audio input unavailable ({e}). Defaulting to mock mode.")
             use_mock = True
+
+    # Quick one-shot recording mode
+    if args.output:
+        rec_dur = args.duration if args.duration else 5.0
+        print(f"🎙️ Recording {rec_dur:.1f}s from physical microphone...")
+        if use_mock:
+            audio = get_simulated_audio("pink", 8, args.max_step, seconds=rec_dur)
+        else:
+            import sounddevice as sd
+            rec_raw = sd.rec(int(rec_dur * FS), samplerate=FS, channels=1, dtype="float32", device=args.device)
+            sd.wait()
+            audio = rec_raw[:, 0]
+        
+        peak = np.max(np.abs(audio))
+        dba = dba_from_audio(audio, FS, args.offset)
+        sf.write(args.output, audio, FS)
+        print(f"✅ Saved live recording to: {args.output}")
+        print(f"🔊 Measured Sound Pressure Level: {dba:.1f} dBA (Peak: {peak:.3f})")
+        return
 
     csv_path = args.output_csv
     new = not os.path.exists(csv_path) or os.path.getsize(csv_path) == 0

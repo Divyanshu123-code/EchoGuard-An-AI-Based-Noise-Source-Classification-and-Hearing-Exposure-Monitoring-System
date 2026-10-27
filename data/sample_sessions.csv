@@ -1,18 +1,1 @@
-session_id,start_time,end_time,profile_id,volume_step,max_step,label
-mac_1792481154,2026-10-20 12:55:54,2026-10-20 12:59:46,prof_galaxy_buds_fe,9,15,macos_ab13x_usb_audio
-mac_1792565628,2026-10-21 12:23:48,2026-10-21 12:23:57,prof_galaxy_buds_fe,15,15,macos_ab13x_usb_audio
-mac_1792566034,2026-10-21 12:30:34,2026-10-21 12:31:31,prof_galaxy_buds_fe,6,15,macos_ab13x_usb_audio
-mac_1792566135,2026-10-21 12:32:15,2026-10-21 12:33:09,prof_galaxy_buds_fe,6,15,macos_ab13x_usb_audio
-mac_1792566219,2026-10-21 12:33:39,2026-10-21 12:34:30,prof_galaxy_buds_fe,7,15,macos_ab13x_usb_audio
-mac_1792575343,2026-10-21 15:05:43,2026-10-21 15:06:05,prof_galaxy_buds_fe,8,15,macos_ab13x_usb_audio
-mac_1792575427,2026-10-21 15:07:07,2026-10-21 16:39:24,prof_galaxy_buds_fe,3,15,macos_ab13x_usb_audio
-mac_1792591807,2026-10-21 19:40:07,2026-10-21 20:10:03,prof_galaxy_buds_fe,8,15,macos_ab13x_usb_audio
-mac_1792596845,2026-10-21 21:04:05,2026-10-21 22:09:51,prof_galaxy_buds_fe,7,15,macos_ab13x_usb_audio
-mac_1792601004,2026-10-21 22:13:24,2026-10-21 22:48:29,prof_galaxy_buds_fe,8,15,macos_ab13x_usb_audio
-mac_1792603989,2026-10-21 23:03:09,2026-10-21 23:39:00,prof_galaxy_buds_fe,6,15,macos_ab13x_usb_audio
-mac_1792606209,2026-10-21 23:40:09,2026-10-22 00:04:20,prof_galaxy_buds_fe,6,15,macos_ab13x_usb_audio
-mac_1792662171,2026-10-22 15:12:51,2026-10-22 15:13:42,prof_galaxy_buds_fe,5,15,macos_ab13x_usb_audio
-mac_1792662279,2026-10-22 15:14:39,2026-10-22 15:17:19,prof_galaxy_buds_fe,6,15,macos_ab13x_usb_audio
-mac_1792662466,2026-10-22 15:17:46,2026-10-22 15:19:41,prof_galaxy_buds_fe,6,15,macos_ab13x_usb_audio
-mac_1792662847,2026-10-22 15:24:07,2026-10-22 15:52:02,prof_galaxy_buds_fe,4,15,macos_ab13x_usb_audio
-mac_1792685005,2026-10-22 21:33:25,2026-10-22 21:33:31,prof_galaxy_buds_fe,4,15,macos_ab13x_usb_audio
+session_id,start_time,end_time,profile_id,volume_step,max_step,label,source_type

@@ -237,9 +237,46 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
 # TAB 1: Today's Exposure & Live Status
 # -----------------------------------------------------------------------------
 with tab1:
+    from src.laptop_monitor import get_live_system_state, record_live_ambient_reading
+    live_state = get_live_system_state()
+
+    st.markdown("### 💻 Real-Time macOS Hardware & Sound Status")
+    hw_col1, hw_col2, hw_col3, hw_col4 = st.columns(4)
+    with hw_col1:
+        st.markdown("**Detected Output Device:**")
+        st.info(f"🎧 **{live_state['device']}**")
+    with hw_col2:
+        st.markdown("**System Master Volume:**")
+        st.info(f"🎚️ **{live_state['volume_pct']}%** (Step {live_state['volume_step']}/15)")
+    with hw_col3:
+        st.markdown("**Media Playback State:**")
+        if live_state["is_playing"]:
+            st.success("▶️ **Playing Audio**")
+        else:
+            st.warning("⏸️ **Audio Idle / Paused**")
+    with hw_col4:
+        st.markdown("**Estimated Ear-Canal Level:**")
+        st.info(f"🔊 **{live_state['current_dba']:.1f} dBA** (±{live_state['margin_db']:.0f}dB)")
+
+    act_col1, act_col2 = st.columns([1, 1])
+    with act_col1:
+        if st.button("🔄 Refresh Live Laptop State Now", use_container_width=True):
+            st.session_state.sessions_df = load_live_sessions()
+            st.rerun()
+    with act_col2:
+        if st.button("🎙️ Measure Room Ambient Noise (3s Mic Sample)", use_container_width=True):
+            with st.spinner("Recording 3 seconds from your laptop microphone..."):
+                amb_res = record_live_ambient_reading(duration_sec=3.0, log_session=True)
+                st.session_state.sessions_df = load_live_sessions()
+                st.success(f"✅ Measured Room Noise: **{amb_res['dba']:.1f} dBA** (Sound type: `{amb_res['predicted_class']}`) — logged to today's exposure!")
+                st.rerun()
+
+    st.markdown("---")
+
     today_str = datetime.date.today().isoformat()
-    # If no sessions today, fallback to latest day in sample dataset
-    if not enriched_df.empty:
+    if is_live_mode:
+        latest_date = today_str
+    elif not enriched_df.empty:
         all_dates = enriched_df["start_time"].apply(lambda s: str(s)[:10]).unique()
         latest_date = today_str if today_str in all_dates else sorted(all_dates)[-1]
     else:
@@ -355,7 +392,7 @@ with tab1:
         display_today.columns = ["Session ID", "Start", "End", "Source", "Duration (h)", "Step / Input", "Est. dBA", "Margin (±dB)", "Data Label", "Dose %"]
         st.dataframe(display_today, use_container_width=True)
     else:
-        st.info("No listening sessions recorded for today. Use the simulator or session logger below to record one!")
+        st.info("🟢 No listening sessions recorded yet today. Keep `monitor_laptop.py` running in terminal while playing Spotify/YouTube to log real headphone sessions, or click '🎙️ Measure Room Ambient Noise' above to capture live room noise!")
 
 
 # -----------------------------------------------------------------------------
@@ -524,15 +561,43 @@ with tab4:
     with ai_col1:
         input_src = st.radio(
             "Source Audio Signal",
-            options=["Built-in Environmental & Audio Classes", "Generate Real-time Acoustic Waveform", "Upload Audio File (.wav)"],
+            options=["🎙️ Record Live from Laptop Microphone", "Built-in Environmental & Audio Classes", "Generate Real-time Acoustic Waveform", "Upload Audio File (.wav / .mp3)"],
             index=0
         )
 
         audio_to_eval = None
-        sr_eval = 22050
+        sr_eval = 44100
         sample_name = ""
 
-        if input_src == "Built-in Environmental & Audio Classes":
+        if input_src == "🎙️ Record Live from Laptop Microphone":
+            from src.laptop_monitor import record_live_ambient_reading
+            import sounddevice as sd
+
+            try:
+                in_dev = sd.query_devices(kind='input')
+                mic_name = in_dev['name']
+            except Exception:
+                mic_name = "Default Microphone"
+            st.caption(f"🎤 Detected Microphone: **{mic_name}**")
+
+            rec_dur = st.slider("Recording Duration (seconds)", min_value=1.0, max_value=8.0, value=3.0, step=0.5)
+            log_amb = st.checkbox("Log to Today's Exposure & Status", value=True)
+
+            if st.button("🔴 Start Live Mic Recording Now", use_container_width=True):
+                with st.spinner(f"Recording {rec_dur:.1f}s from your microphone... Speak or let room noise play!"):
+                    res = record_live_ambient_reading(duration_sec=rec_dur, log_session=log_amb)
+                    st.session_state["live_mic_res"] = res
+                    if log_amb:
+                        st.session_state.sessions_df = load_live_sessions()
+
+            if "live_mic_res" in st.session_state:
+                res = st.session_state["live_mic_res"]
+                audio_to_eval = res["audio"]
+                sr_eval = res["fs"]
+                sample_name = f"live_mic_{res['timestamp']}"
+                st.metric("Live Measured Room Sound Level", f"{res['dba']:.1f} dBA")
+
+        elif input_src == "Built-in Environmental & Audio Classes":
             class_pick = st.selectbox(
                 "Select Audio Category to Test",
                 options=CLASSES,
@@ -540,14 +605,16 @@ with tab4:
                 format_func=lambda x: f"{x} - {CLASS_DESCRIPTIONS[x].split('.')[0]}"
             )
             sample_name = class_pick
-            audio_to_eval = generate_synthetic_sound(class_pick, duration=3.5, sr=sr_eval, seed=42)
+            audio_to_eval = generate_synthetic_sound(class_pick, duration=3.5, sr=22050, seed=42)
+            sr_eval = 22050
 
         elif input_src == "Generate Real-time Acoustic Waveform":
             class_pick = st.selectbox("Acoustic Class", options=CLASSES)
             dur_pick = st.slider("Duration (seconds)", 1.0, 6.0, 3.0, 0.5)
             seed_pick = st.number_input("Random Seed", 0, 9999, 42)
             sample_name = f"{class_pick}_s{seed_pick}"
-            audio_to_eval = generate_synthetic_sound(class_pick, duration=dur_pick, sr=sr_eval, seed=seed_pick)
+            audio_to_eval = generate_synthetic_sound(class_pick, duration=dur_pick, sr=22050, seed=seed_pick)
+            sr_eval = 22050
 
         else:
             uploaded_file = st.file_uploader("Upload WAV audio file", type=["wav", "mp3"])
@@ -799,18 +866,21 @@ with tab6:
         if submitted:
             dt_start = datetime.datetime.combine(session_date, session_time_start)
             dt_end = dt_start + datetime.timedelta(minutes=duration_mins)
-            new_id = f"ses_{len(st.session_state.sessions_df) + 101}"
+            new_id = f"ses_{int(datetime.datetime.now().timestamp())}"
             
-            new_row = pd.DataFrame([{
+            new_row_dict = {
                 "session_id": new_id,
                 "start_time": dt_start.strftime("%Y-%m-%d %H:%M:%S"),
                 "end_time": dt_end.strftime("%Y-%m-%d %H:%M:%S"),
                 "profile_id": selected_profile_id,
                 "volume_step": step_logged,
                 "max_step": 15,
-                "label": session_tag
-            }])
-            st.session_state.sessions_df = pd.concat([st.session_state.sessions_df, new_row], ignore_index=True)
+                "label": session_tag,
+                "source_type": "headphone"
+            }
+            from src.laptop_monitor import append_session_to_csv
+            append_session_to_csv(new_row_dict)
+            st.session_state.sessions_df = load_live_sessions()
             st.success("Session saved successfully!")
             st.rerun()
 
@@ -829,6 +899,10 @@ with tab6:
             )
         with c_exp2:
             if st.button("🗑️ Delete Local Session History (Privacy Option)"):
-                st.session_state.sessions_df = pd.DataFrame(columns=["session_id", "start_time", "end_time", "profile_id", "volume_step", "max_step", "label"])
+                with open(os.path.join(REPO_ROOT, "data", "sample_sessions.csv"), "w") as f:
+                    f.write("session_id,start_time,end_time,profile_id,volume_step,max_step,label,source_type\n")
+                st.session_state.sessions_df = load_live_sessions()
                 st.warning("All local session history has been cleared.")
                 st.rerun()
+    else:
+        st.info("No listening sessions recorded yet. Play media with `monitor_laptop.py` running, or log a session above!")
