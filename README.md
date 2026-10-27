@@ -5,6 +5,8 @@
 
 EchoGuard is an intelligent acoustic monitoring system that combines empirical acoustic coupler calibration, digital signal processing (DSP), machine learning noise source classification, and real-time macOS monitoring. It estimates sound pressure level reaching the human ear (dBA), tracks cumulative daily dosage against NIOSH and WHO-ITU exposure limits, and coaches users toward healthier listening habits without making medical claims.
 
+> 📚 **New to the project?** Read the [EchoGuard Complete Workflow & Beginner's Guide](file:///Users/divanshu/advanced%20ai%20project%20/docs/PROJECT_WORKFLOW_AND_GUIDE.md) for a plain-language explanation of what this project does, why it matters, every feature used, and a step-by-step workflow of every process from start to finish!
+
 ---
 
 ## 🌟 Key Features
@@ -64,6 +66,7 @@ EchoGuard/
 │   ├── sample_sessions.csv           # Persistent user session history
 │   └── demo_sessions.csv             # Pre-configured demo listening data
 ├── docs/
+│   ├── PROJECT_WORKFLOW_AND_GUIDE.md # Complete end-to-end workflow & beginner guide
 │   ├── calibration_notes.md          # Full experimental setup & repeatability data
 │   ├── calibration_report.md         # Final calibration deliverable report
 │   └── figures/                      # High-res publication charts
