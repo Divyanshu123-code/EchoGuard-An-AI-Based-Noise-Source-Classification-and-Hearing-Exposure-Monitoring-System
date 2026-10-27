@@ -120,14 +120,14 @@ st.markdown("""
 def load_live_sessions() -> pd.DataFrame:
     path = os.path.join(REPO_ROOT, "data", "sample_sessions.csv")
     if os.path.exists(path) and os.path.getsize(path) > 0:
-        return pd.read_csv(path)
-    return pd.DataFrame(columns=["session_id", "start_time", "end_time", "profile_id", "volume_step", "max_step", "label"])
+        return pd.read_csv(path, index_col=False)
+    return pd.DataFrame(columns=["session_id", "start_time", "end_time", "profile_id", "volume_step", "max_step", "label", "source_type", "level_dba"])
 
 def load_demo_sessions() -> pd.DataFrame:
     path = os.path.join(REPO_ROOT, "data", "demo_sessions.csv")
     if os.path.exists(path) and os.path.getsize(path) > 0:
-        return pd.read_csv(path)
-    return pd.DataFrame(columns=["session_id", "start_time", "end_time", "profile_id", "volume_step", "max_step", "label"])
+        return pd.read_csv(path, index_col=False)
+    return pd.DataFrame(columns=["session_id", "start_time", "end_time", "profile_id", "volume_step", "max_step", "label", "source_type", "level_dba"])
 
 @st.cache_data
 def load_calibration_dataset() -> pd.DataFrame:

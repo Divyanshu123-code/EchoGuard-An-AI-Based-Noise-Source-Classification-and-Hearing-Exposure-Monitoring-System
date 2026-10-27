@@ -89,14 +89,27 @@ def resolve_profile_for_device(device_name: str) -> tuple[str, str]:
     else:
         return "prof_generic_inear", f"{device_name} (Generic In-Ear)"
 
+SESSION_COLUMNS = [
+    "session_id",
+    "start_time",
+    "end_time",
+    "profile_id",
+    "volume_step",
+    "max_step",
+    "label",
+    "source_type",
+    "level_dba"
+]
+
 def append_session_to_csv(row_dict: dict):
-    """Safely appends a session record to data/sample_sessions.csv."""
+    """Safely appends a session record to data/sample_sessions.csv with standardized columns."""
     os.makedirs(os.path.dirname(SESSIONS_CSV), exist_ok=True)
-    df = pd.DataFrame([row_dict])
+    clean_row = {col: row_dict.get(col, "") for col in SESSION_COLUMNS}
+    df = pd.DataFrame([clean_row], columns=SESSION_COLUMNS)
     if os.path.exists(SESSIONS_CSV) and os.path.getsize(SESSIONS_CSV) > 0:
         df.to_csv(SESSIONS_CSV, mode="a", header=False, index=False)
     else:
-        df.to_csv(SESSIONS_CSV, index=False)
+        df.to_csv(SESSIONS_CSV, mode="w", header=True, index=False)
 
 def get_live_system_state() -> dict:
     """

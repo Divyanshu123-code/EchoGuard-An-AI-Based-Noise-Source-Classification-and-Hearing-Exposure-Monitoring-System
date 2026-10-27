@@ -12,12 +12,14 @@ from src.level_estimator import estimate_level
 from src.dose_calculator import dose_percent, combined_daily_dose, calculate_laeq
 
 def parse_iso_time(ts_str: str) -> datetime.datetime:
-    """Parses ISO timestamp strings."""
+    """Parses ISO timestamp strings with defensive fallback."""
     try:
-        return datetime.datetime.fromisoformat(ts_str)
+        return datetime.datetime.fromisoformat(str(ts_str).strip())
     except Exception:
-        # Fallback format
-        return datetime.datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S")
+        try:
+            return datetime.datetime.strptime(str(ts_str).strip(), "%Y-%m-%d %H:%M:%S")
+        except Exception:
+            return datetime.datetime.now()
 
 def calculate_session_duration_hours(start_time: str, end_time: str) -> float:
     """Calculates duration between start and end timestamps in hours."""
