@@ -15,11 +15,16 @@ Generates the complete, lab-verified dataset for Role 2:
 """
 
 import os
+import sys
 import csv
 import datetime
 import numpy as np
 import pandas as pd
 import soundfile as sf
+
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
 
 from src.audio_level import dba_from_audio
 
